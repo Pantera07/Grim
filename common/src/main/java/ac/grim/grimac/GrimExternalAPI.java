@@ -3,10 +3,13 @@ package ac.grim.grimac;
 import ac.grim.grimac.api.GrimAbstractAPI;
 import ac.grim.grimac.api.GrimUser;
 import ac.grim.grimac.api.alerts.AlertManager;
+import ac.grim.grimac.api.command.CommandRegistry;
 import ac.grim.grimac.api.config.ConfigManager;
 import ac.grim.grimac.api.event.EventBus;
 import ac.grim.grimac.api.event.events.GrimReloadEvent;
 import ac.grim.grimac.api.plugin.GrimPlugin;
+import ac.grim.grimac.command.CloudCommandService;
+import ac.grim.grimac.platform.api.command.CommandService;
 import ac.grim.grimac.manager.config.ConfigManagerFileImpl;
 import ac.grim.grimac.manager.init.start.StartableInitable;
 import ac.grim.grimac.player.GrimPlayer;
@@ -124,6 +127,16 @@ public class GrimExternalAPI implements GrimAbstractAPI, ConfigReloadObserver, S
     @Override
     public @NotNull GrimPlugin getGrimPlugin(@NotNull Object o) {
         return this.api.getExtensionManager().getPlugin(o);
+    }
+
+    @Override
+    public @NotNull CommandRegistry getCommandRegistry() {
+        CommandService service = api.getCommandService();
+        if (service instanceof CloudCommandService cloud) {
+            CommandRegistry registry = cloud.getCommandRegistry();
+            if (registry != null) return registry;
+        }
+        throw new IllegalStateException("Command registry is not yet available — wait until GrimAC has reached the start phase.");
     }
 
     // on load, load the config & register the service
