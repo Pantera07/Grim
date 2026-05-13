@@ -4,9 +4,12 @@ import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.collisions.CollisionData;
 import ac.grim.grimac.utils.collisions.HitboxData;
 import ac.grim.grimac.utils.collisions.datatypes.CollisionBox;
+import ac.grim.grimac.utils.collisions.datatypes.ComplexCollisionBox;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
+import ac.grim.grimac.utils.data.BlockHitData;
 import ac.grim.grimac.utils.data.HitData;
 import ac.grim.grimac.utils.data.Pair;
+import ac.grim.grimac.utils.data.packetentity.PacketEntity;
 import ac.grim.grimac.utils.math.GrimMath;
 import ac.grim.grimac.utils.math.Vector3dm;
 import com.github.retrooper.packetevents.protocol.attribute.Attributes;
@@ -16,6 +19,7 @@ import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState
 import com.github.retrooper.packetevents.protocol.world.states.type.StateType;
 import com.github.retrooper.packetevents.util.Vector3d;
 import com.github.retrooper.packetevents.util.Vector3i;
+import org.jetbrains.annotations.Nullable;
 import lombok.experimental.UtilityClass;
 
 import java.util.ArrayList;
@@ -24,7 +28,7 @@ import java.util.function.BiFunction;
 
 @UtilityClass
 public class WorldRayTrace {
-    public static HitData getNearestBlockHitResult(GrimPlayer player, StateType heldItem, boolean sourcesHaveHitbox, boolean fluidPlacement, boolean itemUsePlacement) {
+    public static BlockHitData getNearestBlockHitResult(GrimPlayer player, StateType heldItem, boolean sourcesHaveHitbox, boolean fluidPlacement, boolean itemUsePlacement) {
         Vector3d startingPos = new Vector3d(player.x, player.y + player.getEyeHeight(), player.z);
         Vector3dm startingVec = new Vector3dm(startingPos.getX(), startingPos.getY(), startingPos.getZ());
         Ray trace = new Ray(player, startingPos.getX(), startingPos.getY(), startingPos.getZ(), player.yaw, player.pitch);
@@ -59,7 +63,7 @@ public class WorldRayTrace {
                 }
             }
             if (bestHitLoc != null) {
-                return new HitData(vector3i, bestHitLoc, bestFace, block);
+                return new BlockHitData(vector3i, bestHitLoc, bestFace, block);
             }
 
             if (sourcesHaveHitbox &&
@@ -72,7 +76,7 @@ public class WorldRayTrace {
                 Pair<Vector3dm, BlockFace> intercept = ReachUtils.calculateIntercept(box, trace.getOrigin(), trace.getPointAtDistance(distance));
 
                 if (intercept.first() != null) {
-                    return new HitData(vector3i, intercept.first(), intercept.second(), block);
+                    return new BlockHitData(vector3i, intercept.first(), intercept.second(), block);
                 }
             }
 
@@ -85,7 +89,7 @@ public class WorldRayTrace {
     //
     // I do have to admit that I'm starting to like bifunctions/new java 8 things more than I originally did.
     // although I still don't understand Mojang's obsession with streams in some of the hottest methods... that kills performance
-    public static HitData traverseBlocks(GrimPlayer player, Vector3d start, Vector3d end, BiFunction<WrappedBlockState, Vector3i, HitData> predicate) {
+    public static BlockHitData traverseBlocks(GrimPlayer player, Vector3d start, Vector3d end, BiFunction<WrappedBlockState, Vector3i, BlockHitData> predicate) {
         // I guess go back by the collision epsilon?
         double endX = GrimMath.lerp(-1.0E-7D, end.x, start.x);
         double endY = GrimMath.lerp(-1.0E-7D, end.y, start.y);
@@ -101,7 +105,7 @@ public class WorldRayTrace {
         if (start.equals(end)) return null;
 
         WrappedBlockState state = player.compensatedWorld.getBlock(floorStartX, floorStartY, floorStartZ);
-        HitData apply = predicate.apply(state, new Vector3i(floorStartX, floorStartY, floorStartZ));
+        BlockHitData apply = predicate.apply(state, new Vector3i(floorStartX, floorStartY, floorStartZ));
 
         if (apply != null) {
             return apply;
@@ -149,5 +153,74 @@ public class WorldRayTrace {
         }
 
         return null;
+    }
+
+    @Nullable
+    public static HitData getNearestHitResult(GrimPlayer player, PacketEntity targetEntity, Vector3dm eyePos, Vector3dm lookVec) {
+
+        double maxBlockDistance = player.compensatedEntities.self.getAttributeValue(Attributes.BLOCK_INTERACTION_RANGE);
+
+        Vector3d startingPos = new Vector3d(eyePos.getX(), eyePos.getY(), eyePos.getZ());
+        Vector3dm startingVec = new Vector3dm(startingPos.getX(), startingPos.getY(), startingPos.getZ());
+        Ray trace = new Ray(eyePos, lookVec);
+        Vector3dm endVec = trace.getPointAtDistance(maxBlockDistance);
+        Vector3d endPos = new Vector3d(endVec.getX(), endVec.getY(), endVec.getZ());
+
+        return getTraverseResult(player, null, startingPos, startingVec, trace, endPos, false, true, maxBlockDistance, true);
+    }
+
+    // TODO replace shrinkBlocks boolean with a data structure/better way to represent
+    // 1. We have a target block. Shrink everything by movementThreshold except expand target block (we are checking to see if it matches the target block)
+    // 2. We do not have a target block. Shrink everything by movementThreshold()
+    // 3. Do not expand or shrink everything, we do not expect 0.03/0.002 or we legacy example where we want to keep old behaviour
+    private static BlockHitData getTraverseResult(GrimPlayer player, @Nullable StateType heldItem, Vector3d startingPos, Vector3dm startingVec, Ray trace, Vector3d endPos, boolean sourcesHaveHitbox, boolean checkInside, double knownDistance, boolean shrinkBlocks) {
+        return traverseBlocks(player, startingPos, endPos, (block, vector3i) -> {
+            // even though sometimes we are raytracing against a block that is the target block, we pass false to this function because it only applies a change for brewing stands in 1.8
+            CollisionBox data = HitboxData.getBlockHitbox(player, heldItem, player.getClientVersion(), block, false, vector3i.getX(), vector3i.getY(), vector3i.getZ());
+            SimpleCollisionBox[] boxes = new SimpleCollisionBox[ComplexCollisionBox.DEFAULT_MAX_COLLISION_BOX_SIZE];
+            int size = data.downCast(boxes);
+
+            double bestHitResult = Double.MAX_VALUE;
+            Vector3dm bestHitLoc = null;
+            BlockFace bestFace = null;
+
+            for (int i = 0; i < size; i++) {
+                if (shrinkBlocks) boxes[i].expand(-player.getMovementThreshold());
+                Pair<Vector3dm, BlockFace> intercept = ReachUtils.calculateIntercept(boxes[i], trace.getOrigin(), trace.getPointAtDistance(knownDistance));
+                if (intercept.first() == null) continue; // No intercept
+
+                Vector3dm hitLoc = intercept.first();
+
+                // If inside a block, return empty result for reach check (don't bother checking this?)
+                if (checkInside && ReachUtils.isVecInside(boxes[i], trace.getOrigin())) {
+                    return null;
+                }
+
+                if (hitLoc.distanceSquared(startingVec) < bestHitResult) {
+                    bestHitResult = hitLoc.distanceSquared(startingVec);
+                    bestHitLoc = hitLoc;
+                    bestFace = intercept.second();
+                }
+            }
+
+            if (bestHitLoc != null) {
+                return new BlockHitData(vector3i, bestHitLoc, bestFace, block);
+            }
+
+            if (sourcesHaveHitbox &&
+                    (player.compensatedWorld.isWaterSourceBlock(vector3i.getX(), vector3i.getY(), vector3i.getZ())
+                            || player.compensatedWorld.getLavaFluidLevelAt(vector3i.getX(), vector3i.getY(), vector3i.getZ()) == (8 / 9f))) {
+                double waterHeight = player.compensatedWorld.getFluidLevelAt(vector3i.getX(), vector3i.getY(), vector3i.getZ());
+                SimpleCollisionBox box = new SimpleCollisionBox(vector3i.getX(), vector3i.getY(), vector3i.getZ(), vector3i.getX() + 1, vector3i.getY() + waterHeight, vector3i.getZ() + 1);
+
+                Pair<Vector3dm, BlockFace> intercept = ReachUtils.calculateIntercept(box, trace.getOrigin(), trace.getPointAtDistance(knownDistance));
+
+                if (intercept.first() != null) {
+                    return new BlockHitData(vector3i, intercept.first(), intercept.second(), block);
+                }
+            }
+
+            return null;
+        });
     }
 }
