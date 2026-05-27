@@ -21,12 +21,16 @@ import ac.grim.grimac.checks.CheckData;
 import ac.grim.grimac.checks.type.PacketCheck;
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
+import ac.grim.grimac.utils.data.BlockHitData;
+import ac.grim.grimac.utils.data.HitData;
 import ac.grim.grimac.utils.data.packetentity.PacketEntity;
 import ac.grim.grimac.utils.data.packetentity.PacketEntitySizeable;
 import ac.grim.grimac.utils.data.packetentity.dragon.PacketEntityEnderDragonPart;
+import ac.grim.grimac.utils.math.GrimMath;
 import ac.grim.grimac.utils.math.Vector3dm;
 import ac.grim.grimac.utils.nmsutil.ReachUtils;
 import ac.grim.grimac.utils.viaversion.ViaVersionUtil;
+import ac.grim.grimac.utils.nmsutil.WorldRayTrace;
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
@@ -39,19 +43,19 @@ import com.github.retrooper.packetevents.protocol.item.ItemStack;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.player.GameMode;
+import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
 import com.github.retrooper.packetevents.protocol.player.InteractionHand;
 import com.github.retrooper.packetevents.util.Vector3d;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientAttack;
+import com.github.retrooper.packetevents.util.Vector3i;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientInteractEntity;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerFlying;
 import com.viaversion.viaversion.api.Via;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 // You may not copy the check unless you are licensed under GPL
 @CheckData(name = "Reach", stableKey = "grim.combat.reach", setback = 10)
@@ -65,8 +69,13 @@ public class Reach extends Check implements PacketCheck {
     // Only one flag per reach attack, per entity, per tick.
     // We store position because lastX isn't reliable on teleports.
     private final Int2ObjectMap<InteractionData> playerAttackQueue = new Int2ObjectOpenHashMap<>();
+    // temporarily used to prevent falses in the wall hit check
+    private final Set<Vector3i> blocksChangedThisTick = new HashSet<>();
+    // extra distance to raytrace beyond player reach distance so we know how far beyond the legit distance a cheater hit
+    public static final double extraSearchDistance = 3;
+
     private boolean cancelImpossibleHits;
-    private double threshold;
+    public double threshold;
     private double cancelBuffer; // For the next 4 hits after using reach, we aggressively cancel reach
 
     public Reach(GrimPlayer player) {
@@ -86,8 +95,9 @@ public class Reach extends Check implements PacketCheck {
         }
 
         // If the player set their look, or we know they have a new tick
+        final boolean isFlying = WrapperPlayClientPlayerFlying.isFlying(event.getPacketType());
         if (isUpdate(event.getPacketType())) {
-            tickBetterReachCheckWithAngle();
+            tickBetterReachCheckWithAngle(isFlying);
         }
     }
 
@@ -219,7 +229,7 @@ public class Reach extends Check implements PacketCheck {
         }
     }
 
-    private void tickBetterReachCheckWithAngle() {
+    private void tickBetterReachCheckWithAngle(boolean isFlying) {
         for (Int2ObjectMap.Entry<InteractionData> attack : playerAttackQueue.int2ObjectEntrySet()) {
             PacketEntity reachEntity = player.compensatedEntities.entityMap.get(attack.getIntKey());
             if (reachEntity == null) continue;
@@ -241,10 +251,17 @@ public class Reach extends Check implements PacketCheck {
                     }
                     player.checkManager.getCheck(Hitboxes.class).flagAndAlert(result.verbose() + added);
                 }
+                case WALL_HIT -> {
+                    String added = reachEntity.type == EntityTypes.PLAYER ? "" : "type=" + reachEntity.type.getName().getKey();
+                    player.checkManager.getCheck(WallHit.class).flagAndAlert(result.verbose() + added);
+                }
             }
         }
 
         playerAttackQueue.clear();
+        // We can't use transactions for this because of this problem:
+        // transaction -> block changed applied -> 2nd transaction -> list cleared -> attack packet -> flying -> reach block hit checked, falses
+        if (isFlying) blocksChangedThisTick.clear();
     }
 
     @NotNull
@@ -273,6 +290,13 @@ public class Reach extends Check implements PacketCheck {
         // +3 would be 3 + 3 = 6, which is the pre-1.20.5 behaviour, preventing "Missed Hitbox"
         final double distance = maxReach + 3;
 
+        /**
+         * Data structure to store a valid ray path that hit the target entity.
+         * It binds the look direction, eye height, and the exact distance to the entity together.
+         */
+        record RayPath(Vector3dm look, double eye, double entityDistSq) {}
+
+        List<RayPath> possiblePaths = new ArrayList<>();
         final double[] possibleEyeHeights = player.getPossibleEyeHeights();
         for (Vector3dm lookVec : possibleLookDirs) {
             lookVec.multiply(distance);
@@ -285,18 +309,72 @@ public class Reach extends Check implements PacketCheck {
 
                 if (ReachUtils.isVecInside(targetBox, eyePos)) {
                     minDistance = 0;
-                    break;
+                    possiblePaths.add(new RayPath(lookVec, eye, 0.0));
+                    continue;
                 }
 
                 if (intercept != null) {
                     minDistance = Math.min(eyePos.distance(intercept), minDistance);
+                    double distSq = eyePos.distanceSquared(intercept);
+                    possiblePaths.add(new RayPath(lookVec, eye, distSq));
                 }
+            }
+        }
+
+        HitData foundHitData = null;
+
+        boolean isPvPTarget = reachEntity.getType() == EntityTypes.PLAYER || reachEntity.getType() == EntityTypes.END_CRYSTAL;
+
+        // If the entity is within range of the player (we'll flag anyway if not, so no point checking blocks in this case)
+        // Ignore when could be hitting through a moving shulker, piston blocks. They are just too glitchy/uncertain to check.
+        if (isPvPTarget && !possiblePaths.isEmpty() && minDistance <= distance - extraSearchDistance && !player.compensatedWorld.isNearHardEntity(player.boundingBox.copy().expand(4))) {
+
+            // If we have at least one valid hit path, assume it's blocked by a wall initially.
+            // We will clear this flag if we find even a single unobstructed path.
+            boolean allPathsBlocked = true;
+            HitData firstBlockCandidate = null;
+            final Vector3dm currentEyes = new Vector3dm(x, 0, z);
+
+            for (RayPath path : possiblePaths) {
+                currentEyes.setY(y + path.eye());
+
+                // Retrieve the nearest block hit result along this specific look direction.
+                HitData hitData = WorldRayTrace.getNearestHitResult(player, reachEntity, currentEyes, path.look());
+
+                if (hitData instanceof BlockHitData blockHit) {
+                    double blockDistSq = currentEyes.distanceSquared(blockHit.getBlockHitLocation());
+
+                    // Check if a solid block is obstructing the path TO the entity.
+                    // We compare the block distance only with the entity distance of the SAME ray path.
+                    if (blockDistSq < path.entityDistSq()) {
+                        if (!blocksChangedThisTick.contains(blockHit.position())) {
+                            if (firstBlockCandidate == null) firstBlockCandidate = hitData;
+                            continue; // This specific path is blocked; check the next available path.
+                        }
+                    }
+                }
+
+                // If we reach this point, it means we've found at least one unobstructed path to the entity.
+                // Even if other paths are blocked by a wall or corner, this single clear path makes the hit legitimate.
+                allPathsBlocked = false;
+                break;
+            }
+
+            // Flag as WALL_HIT only if EVERY possible path that could have hit the entity is obstructed by a block.
+            if (allPathsBlocked) {
+                minDistance = Double.MIN_VALUE;
+                foundHitData = firstBlockCandidate;
             }
         }
 
         // if the entity is not exempt and the entity is alive
         if ((!blacklisted.contains(reachEntity.getType()) && reachEntity.isLivingEntity) || reachEntity.getType() == EntityTypes.END_CRYSTAL) {
-            if (minDistance == Double.MAX_VALUE) {
+            if (minDistance == Double.MIN_VALUE && foundHitData != null) {
+                cancelBuffer = 1;
+                if (foundHitData instanceof BlockHitData) {
+                    return new CheckResult(ResultType.WALL_HIT, "Hit block=" + ((BlockHitData) foundHitData).state().getType().getName() + " ");
+                }
+            } else if (minDistance == Double.MAX_VALUE) {
                 cancelBuffer = 1;
                 return new CheckResult(ResultType.HITBOX, "");
             } else if (minDistance > maxReach) {
@@ -357,13 +435,22 @@ public class Reach extends Check implements PacketCheck {
     }
 
     private enum ResultType {
-        REACH, HITBOX, NONE
+        REACH, HITBOX, WALL_HIT, NONE
     }
 
     private record CheckResult(ResultType type, String verbose) {
         public boolean isFlag() {
             return type != ResultType.NONE;
         }
+    }
+
+    public void handleBlockChange(Vector3i vector3i, WrappedBlockState state) {
+        if (blocksChangedThisTick.size() >= 40) return; // Don't let players freeze movement packets to grow this
+        // Only do this for nearby blocks
+        if (GrimMath.distanceSquared(vector3i.x, vector3i.y, vector3i.z, player.x, player.y, player.z) > 36) return;
+        // Only do this if the state really had any world impact
+        if (state.equals(player.compensatedWorld.getBlock(vector3i))) return;
+        blocksChangedThisTick.add(vector3i);
     }
 
     private record InteractionData(double x, double y, double z, boolean hasAttackRange,
