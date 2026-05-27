@@ -161,8 +161,8 @@ public class WorldRayTrace {
 
         Vector3d startingPos = new Vector3d(eyePos.getX(), eyePos.getY(), eyePos.getZ());
         Vector3dm startingVec = new Vector3dm(startingPos.getX(), startingPos.getY(), startingPos.getZ());
-        Ray trace = new Ray(eyePos, lookVec);
-        Vector3dm endVec = trace.getPointAtDistance(maxBlockDistance);
+        Ray trace = new Ray(eyePos.toVector3d(), lookVec.toVector3d());
+        Vector3dm endVec = Vector3dm.from(trace.getPointAtDistance(maxBlockDistance));
         Vector3d endPos = new Vector3d(endVec.getX(), endVec.getY(), endVec.getZ());
 
         return getTraverseResult(player, null, startingPos, startingVec, trace, endPos, false, true, maxBlockDistance, true);
@@ -185,13 +185,13 @@ public class WorldRayTrace {
 
             for (int i = 0; i < size; i++) {
                 if (shrinkBlocks) boxes[i].expand(-player.getMovementThreshold());
-                Pair<Vector3dm, BlockFace> intercept = ReachUtils.calculateIntercept(boxes[i], trace.getOrigin(), trace.getPointAtDistance(knownDistance));
+                Pair<Vector3d, BlockFace> intercept = ReachUtils.calculateIntercept(boxes[i], trace.origin(), trace.getPointAtDistance(knownDistance));
                 if (intercept.first() == null) continue; // No intercept
 
-                Vector3dm hitLoc = intercept.first();
+                Vector3dm hitLoc = Vector3dm.from(intercept.first());
 
                 // If inside a block, return empty result for reach check (don't bother checking this?)
-                if (checkInside && ReachUtils.isVecInside(boxes[i], trace.getOrigin())) {
+                if (checkInside && ReachUtils.isVecInside(boxes[i], trace.origin())) {
                     return null;
                 }
 
@@ -212,10 +212,10 @@ public class WorldRayTrace {
                 double waterHeight = player.compensatedWorld.getFluidLevelAt(vector3i.getX(), vector3i.getY(), vector3i.getZ());
                 SimpleCollisionBox box = new SimpleCollisionBox(vector3i.getX(), vector3i.getY(), vector3i.getZ(), vector3i.getX() + 1, vector3i.getY() + waterHeight, vector3i.getZ() + 1);
 
-                Pair<Vector3dm, BlockFace> intercept = ReachUtils.calculateIntercept(box, trace.getOrigin(), trace.getPointAtDistance(knownDistance));
+                Pair<Vector3d, BlockFace> intercept = ReachUtils.calculateIntercept(box, trace.origin(), trace.getPointAtDistance(knownDistance));
 
                 if (intercept.first() != null) {
-                    return new BlockHitData(vector3i, intercept.first(), intercept.second(), block);
+                    return new BlockHitData(vector3i, Vector3dm.from(intercept.first()), intercept.second(), block);
                 }
             }
 
