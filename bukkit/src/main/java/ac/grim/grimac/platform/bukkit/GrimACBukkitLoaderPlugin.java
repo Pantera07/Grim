@@ -18,17 +18,18 @@ import ac.grim.grimac.platform.api.command.CommandService;
 import ac.grim.grimac.platform.api.manager.ItemResetHandler;
 import ac.grim.grimac.platform.api.manager.MessagePlaceHolderManager;
 import ac.grim.grimac.platform.api.manager.PlatformPluginManager;
-import ac.grim.grimac.platform.api.manager.cloud.CloudCommandAdapter;
+import ac.grim.grimac.platform.api.manager.cloud.CloudPlatformCommandArguments;
 import ac.grim.grimac.platform.api.player.PlatformPlayerFactory;
 import ac.grim.grimac.platform.api.scheduler.PlatformScheduler;
 import ac.grim.grimac.platform.api.sender.Sender;
 import ac.grim.grimac.platform.api.sender.SenderFactory;
 import ac.grim.grimac.platform.bukkit.initables.BukkitBStats;
 import ac.grim.grimac.platform.bukkit.initables.BukkitEventManager;
+import ac.grim.grimac.platform.bukkit.initables.BukkitLuckPermsInitable;
 import ac.grim.grimac.platform.bukkit.initables.BukkitTickEndEvent;
 import ac.grim.grimac.platform.bukkit.manager.BukkitItemResetHandler;
 import ac.grim.grimac.platform.bukkit.manager.BukkitMessagePlaceHolderManager;
-import ac.grim.grimac.platform.bukkit.manager.BukkitParserDescriptorFactory;
+import ac.grim.grimac.platform.bukkit.manager.BukkitCloudPlatformCommandArguments;
 import ac.grim.grimac.platform.bukkit.manager.BukkitPermissionRegistrationManager;
 import ac.grim.grimac.platform.bukkit.manager.BukkitPlatformPluginManager;
 import ac.grim.grimac.platform.bukkit.player.BukkitPlatformPlayerFactory;
@@ -53,7 +54,6 @@ import org.incendo.cloud.execution.ExecutionCoordinator;
 import org.incendo.cloud.paper.LegacyPaperCommandManager;
 
 public final class GrimACBukkitLoaderPlugin extends JavaPlugin implements PlatformLoader {
-
     public static GrimACBukkitLoaderPlugin LOADER;
 
     private final LazyHolder<PlatformScheduler> scheduler = LazyHolder.simple(this::createScheduler);
@@ -61,7 +61,7 @@ public final class GrimACBukkitLoaderPlugin extends JavaPlugin implements Platfo
     private final LazyHolder<BukkitSenderFactory> senderFactory = LazyHolder.simple(BukkitSenderFactory::new);
     private final LazyHolder<ItemResetHandler> itemResetHandler = LazyHolder.simple(BukkitItemResetHandler::new);
     private final LazyHolder<CommandService> commandService = LazyHolder.simple(this::createCommandService);
-    private final CloudCommandAdapter commandAdapter = new BukkitParserDescriptorFactory();
+    private final CloudPlatformCommandArguments commandArguments = new BukkitCloudPlatformCommandArguments();
 
     @Getter private final PlatformPlayerFactory platformPlayerFactory = new BukkitPlatformPlayerFactory();
     @Getter private final PlatformPluginManager pluginManager = new BukkitPlatformPluginManager();
@@ -88,6 +88,7 @@ public final class GrimACBukkitLoaderPlugin extends JavaPlugin implements Platfo
                 new BukkitEventManager(),
                 new BukkitTickEndEvent(),
                 new BukkitBStats(),
+                new BukkitLuckPermsInitable(),
                 (StartableInitable) () -> {
                     if (BukkitMessagePlaceHolderManager.hasPlaceholderAPI) {
                         new PlaceholderAPIExpansion().register();
@@ -187,7 +188,7 @@ public final class GrimACBukkitLoaderPlugin extends JavaPlugin implements Platfo
 
     private CommandService createCommandService() {
         try {
-            return new CloudCommandService(this::createCloudCommandManager, commandAdapter);
+            return new CloudCommandService(this::createCloudCommandManager, commandArguments);
         } catch (Throwable t) {
             LogUtil.warn("CRITICAL: Failed to initialize Command Framework. " +
                     "Grim will continue to run with no commands.", t);
