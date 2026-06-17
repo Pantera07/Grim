@@ -383,7 +383,8 @@ public class Reach extends Check implements PacketCheck {
             if (minDistance == Double.MIN_VALUE && foundHitData != null) {
                 cancelBuffer = 1;
                 if (foundHitData instanceof BlockHitData) {
-                    return new CheckResult(ResultType.WALL_HIT, "Hit block=" + ((BlockHitData) foundHitData).state().getType().getName() + " ");
+                    //return new CheckResult(ResultType.WALL_HIT, "Hit block=" + ((BlockHitData) foundHitData).state().getType().getName() + " ");
+                    return new CheckResult(ResultType.WALL_HIT, 0, 0, false); // todo
                 }
             } else if (minDistance == Double.MAX_VALUE) {
                 cancelBuffer = 1;
