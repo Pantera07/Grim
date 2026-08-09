@@ -19,7 +19,7 @@ import ac.grim.grimac.api.config.ConfigManager;
 import ac.grim.grimac.api.storage.verbose.Verbose;
 import ac.grim.grimac.checks.Check;
 import ac.grim.grimac.checks.CheckData;
-import ac.grim.grimac.checks.type.PacketCheck;
+import ac.grim.grimac.checks.type.PacketReceiveListener;
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
 import ac.grim.grimac.utils.data.BlockHitData;
@@ -59,8 +59,8 @@ import org.jetbrains.annotations.NotNull;
 import java.util.*;
 
 // You may not copy the check unless you are licensed under GPL
-@CheckData(name = "Reach", stableKey = "grim.combat.reach", description = "Attacked an entity from too far away", setback = 10)
-public class Reach extends Check implements PacketCheck {
+@CheckData(name = "Reach", stableKey = "grim.combat.reach", description = "Attacked an entity from too far away")
+public class Reach extends Check implements PacketReceiveListener {
     private static final Verbose V = Verbose.of("{f64:%.5f} blocks, type={entity}");
 
     private static final List<EntityType> blacklisted = Arrays.asList(
@@ -243,17 +243,15 @@ public class Reach extends Check implements PacketCheck {
             InteractionData interactionData = attack.getValue();
             CheckResult result = checkReach(reachEntity, interactionData.x, interactionData.y, interactionData.z, interactionData.hasAttackRange, interactionData.maxReach, interactionData.hitboxMargin, interactionData.attackRangeMovement, false);
             switch (result.type()) {
-                case REACH -> {
-                    flag(
-                            V.write(verbose()).f64(result.minDistance()).uint(reachEntity.getType().getId(player.getClientVersion())),
-                            () -> {
-                                String added = ", type=" + reachEntity.getType().getName().getKey();
-                                if (reachEntity instanceof PacketEntitySizeable sizeable) {
-                                    added += ", size=" + sizeable.size;
-                                }
-                                return result.verbose() + added;
-                            });
-                }
+                case REACH -> flag(
+                        V.write(verbose()).f64(result.minDistance()).uint(reachEntity.getType().getId(player.getClientVersion())),
+                        () -> {
+                            String added = ", type=" + reachEntity.getType().getName().getKey();
+                            if (reachEntity instanceof PacketEntitySizeable sizeable) {
+                                added += ", size=" + sizeable.size;
+                            }
+                            return result.verbose() + added;
+                        });
                 case HITBOX -> {
                     String added = "type=" + reachEntity.getType().getName().getKey();
                     if (reachEntity instanceof PacketEntitySizeable sizeable) {
@@ -453,7 +451,7 @@ public class Reach extends Check implements PacketCheck {
     }
 
     @Override
-    public void onReload(ConfigManager config) {
+    public void onReload(@NotNull ConfigManager config) {
         this.cancelImpossibleHits = config.getBooleanElse("Reach.block-impossible-hits", true);
         this.threshold = config.getDoubleElse("Reach.threshold", 0.0005);
     }
