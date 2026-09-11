@@ -261,7 +261,7 @@ public class Reach extends Check implements PacketReceiveListener {
                 }
                 case WALL_HIT -> {
                     String added = reachEntity.getType() == EntityTypes.PLAYER ? "" : "type=" + reachEntity.getType().getName().getKey();
-                    player.checkManager.getCheck(WallHit.class).flag(result.verbose() + added);
+                    player.checkManager.get(WallHit.class).flag(result.verbose() + added);
                 }
             }
         }
