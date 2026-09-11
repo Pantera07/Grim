@@ -257,7 +257,7 @@ public class Reach extends Check implements PacketReceiveListener {
                     if (reachEntity instanceof PacketEntitySizeable sizeable) {
                         added += ", size=" + sizeable.size;
                     }
-                    player.checkManager.getCheck(Hitboxes.class).flag(result.verbose() + added);
+                    player.checkManager.get(Hitboxes.class).flag(result.verbose() + added);
                 }
                 case WALL_HIT -> {
                     String added = reachEntity.getType() == EntityTypes.PLAYER ? "" : "type=" + reachEntity.getType().getName().getKey();
