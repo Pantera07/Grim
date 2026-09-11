@@ -159,7 +159,7 @@ public class PointThreeEstimator {
             isNearFluid = true;
         }
 
-        player.checkManager.getCheck(Reach.class).handleBlockChange(new Vector3i(x, y, z), state);
+        player.checkManager.get(Reach.class).handleBlockChange(new Vector3i(x, y, z), state);
 
         if (pointThreeBox.isIntersected(new SimpleCollisionBox(x, y, z))) {
             // https://github.com/MWHunter/Grim/issues/613
