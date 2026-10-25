@@ -161,7 +161,7 @@ public class PointThreeEstimator {
 
         player.checkManager.get(Reach.class).handleBlockChange(new Vector3i(x, y, z), state);
 
-        if (pointThreeBox.isIntersected(new SimpleCollisionBox(x, y, z))) {
+        if (pointThreeBox.isIntersected(new SimpleCollisionBox(x, y, z)) && !data.isNull())
             // https://github.com/MWHunter/Grim/issues/613
             int controllingEntityId = player.inVehicle() ? player.getRidingVehicleId() : player.entityID;
 
