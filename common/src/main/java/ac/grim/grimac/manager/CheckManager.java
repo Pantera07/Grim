@@ -250,6 +250,7 @@ public class CheckManager implements BasicReloadable {
                 .put(TransactionOrder.class, new TransactionOrder(player))
                 .put(VehicleC.class, new VehicleC(player))
                 .put(Hitboxes.class, new Hitboxes(player)) // Hitboxes is invoked by Reach
+                .put(WallHit.class, new WallHit(player))
                 .build();
 
         ArrayList<AbstractCheck> checks = new ArrayList<>();
