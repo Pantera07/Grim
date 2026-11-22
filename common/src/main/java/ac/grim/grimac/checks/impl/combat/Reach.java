@@ -29,6 +29,7 @@ import ac.grim.grimac.utils.data.packetentity.PacketEntitySizeable;
 import ac.grim.grimac.utils.data.packetentity.dragon.PacketEntityEnderDragonPart;
 import ac.grim.grimac.utils.math.GrimMath;
 import ac.grim.grimac.utils.math.Vector3dm;
+import ac.grim.grimac.utils.math.VectorUtils;
 import ac.grim.grimac.utils.nmsutil.ReachUtils;
 import ac.grim.grimac.utils.viaversion.ViaVersionUtil;
 import ac.grim.grimac.utils.nmsutil.WorldRayTrace;
@@ -311,20 +312,19 @@ public class Reach extends Check implements PacketReceiveListener {
             lookVec.multiply(distance);
 
             for (double eye : possibleEyeHeights) {
-                final Vector3d eyePos = new Vector3d(x, y + eye, z);
-                Vector3d endReachPos = eyePos.add(lookVec.getX(), lookVec.getY(), lookVec.getZ());
+                double eyeY = y + eye;
 
-                Vector3d intercept = ReachUtils.calculateIntercept(targetBox, eyePos, endReachPos).first();
+                Vector3d intercept = ReachUtils.calculateIntercept(targetBox, x, eyeY, z, x + lookVec.getX(), eyeY + lookVec.getY(), z + lookVec.getZ()).first();
 
-                if (ReachUtils.isVecInside(targetBox, eyePos)) {
+                if (ReachUtils.isVecInside(targetBox, x, eyeY, z)) {
                     minDistance = 0;
                     possiblePaths.add(new RayPath(lookVec, eye, 0.0));
                     continue;
                 }
 
                 if (intercept != null) {
-                    minDistance = Math.min(eyePos.distance(intercept), minDistance);
-                    double distSq = eyePos.distanceSquared(intercept);
+                    minDistance = Math.min(VectorUtils.distance(x, eyeY, z, intercept), minDistance);
+                    double distSq = VectorUtils.distanceSquared(x, eyeY, z, intercept);
                     possiblePaths.add(new RayPath(lookVec, eye, distSq));
                 }
             }
