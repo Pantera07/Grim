@@ -54,7 +54,7 @@ public class CheckManagerListener extends PacketListenerAbstract {
         super(PacketListenerPriority.LOW);
     }
 
-private static void placeWaterLavaSnowBucket(@NotNull GrimPlayer player, @NotNull ItemStack held, @NotNull StateType toPlace, @NotNull InteractionHand hand, int sequence) {
+    private static void placeWaterLavaSnowBucket(@NotNull GrimPlayer player, @NotNull ItemStack held, @NotNull StateType toPlace, @NotNull InteractionHand hand, int sequence) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(held, "held");
         Objects.requireNonNull(toPlace, "toPlace");
