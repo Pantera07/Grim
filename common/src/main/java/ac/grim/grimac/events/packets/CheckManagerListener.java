@@ -60,7 +60,7 @@ public class CheckManagerListener extends PacketListenerAbstract {
         Objects.requireNonNull(toPlace, "toPlace");
         Objects.requireNonNull(hand, "hand");
 
-        HitData data = WorldRayTrace.getNearestBlockHitResult(player, StateTypes.AIR, false, true, true);
+        BlockHitData data = WorldRayTrace.getNearestBlockHitResult(player, StateTypes.AIR, false, true, true);
         if (data != null) {
             BlockPlace blockPlace = new BlockPlace(player, hand, data.position(), data.closestDirection().getFaceValue(), data.closestDirection(), held, data, sequence);
 
@@ -296,7 +296,7 @@ public class CheckManagerListener extends PacketListenerAbstract {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(hand, "hand");
 
-        HitData data = WorldRayTrace.getNearestBlockHitResult(player, null, true, false, true);
+        BlockHitData data = WorldRayTrace.getNearestBlockHitResult(player, null, true, false, true);
 
         if (data != null) {
             BlockPlace blockPlace = new BlockPlace(player, hand, data.position(), data.closestDirection().getFaceValue(), data.closestDirection(), ItemStack.EMPTY, data, sequence);
@@ -382,7 +382,7 @@ public class CheckManagerListener extends PacketListenerAbstract {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(hand, "hand");
 
-        HitData data = WorldRayTrace.getNearestBlockHitResult(player, null, true, false, true);
+        BlockHitData data = WorldRayTrace.getNearestBlockHitResult(player, null, true, false, true);
 
         if (data != null) {
             // A lilypad cannot replace a fluid
